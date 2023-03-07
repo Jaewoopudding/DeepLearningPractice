@@ -13,7 +13,8 @@ class ConvolutionalLSTM(nn.Module):
 
         self.statnet = StatAnalModule(shape[-1], stats_complexity)
         self.fft = FFTModule(shape[-1])
-        self.cwt = CWTModule(shape[-1], cwt_filters=cwt_filters)
+        self.cwt = CWTModule(shape[-1],
+                             cwt_filters=cwt_filters)
         self.cnn = CNNModule(sequence_shape=(sequence_depth, shape[-1]),
                              kernel_size=kernel_size,
                              base_channel=base_channel,
