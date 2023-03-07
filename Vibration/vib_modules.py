@@ -26,6 +26,9 @@ class CNNModule(nn.Module):
 
         self.model = self.build()
 
+    def get_last_layer_length(self):
+        return int(self.sequence_shape[-1] / (2 * self.module_count))
+
     def build(self):
         channel = self.base_channel
         length = self.sequence_shape[1]
@@ -66,35 +69,44 @@ class StatAnalModule(nn.Module):
 
     @staticmethod
     def moment(x, order):
-        return ((x - torch.mean(x, -1).reshape(-1, 1)) ** order).sum(-1)
+        return ((x - torch.mean(x, -1)[:, :, None]) ** order).sum(-1)
+
+    def return_shape(self):
+        if self.complexity == 2:
+            features = 10
+        elif self.complexity == 1:
+            features = 7
+        else:
+            features = 5
+        return features
 
     def forward(self, x):
         rms = torch.sqrt(torch.mean(torch.pow(x, 2), -1))
-        maxima = torch.max(x, -1)[0]
-        minima = torch.min(x, -1)[0]
-        result = torch.cat([torch.mean(x, -1), maxima, minima, rms, torch.var(x, -1)])
-        if self.complexity > 0:
+        maxima = torch.max(x, -1).values
+        minima = torch.min(x, -1).values
+        result = torch.cat([torch.mean(x, -1), maxima, minima, rms, torch.var(x, -1)], -1)
+        if self.complexity >= 1:
             skew = self.moment(x, 3) / (torch.std(x, -1)) ** 3 * self.length / (self.length - 1) / (self.length - 2)
             kurto = self.length / (self.length - 1) ** 2 * self.moment(x, 4) / (torch.std(x, -1)) ** 4 - 3
-            result = torch.cat([result, skew, kurto])
+            result = torch.cat([result, skew, kurto], -1)
 
-        elif self.complexity > 1:
+        if self.complexity >= 2:
 
             crest_factor = torch.abs(x).max(-1)[0] / rms
             meanabs = torch.abs(x).mean(-1)
             impulse_factor = (maxima - minima) / meanabs
             shape_factor = rms / meanabs
-            result = torch.cat([result, crest_factor, impulse_factor, shape_factor])
+            result = torch.cat([result, crest_factor, impulse_factor, shape_factor], -1)
 
         return result
 
 
 class CWTModule(nn.Module):
-    def __init__(self, length, in_channel=1, out_channel=4):
+    def __init__(self, length, in_channel=1, cwt_filters=4):
         super().__init__()
         self.T = length  # 시퀀스 길이
-        self.out_channel = out_channel  # not supported yet
-        self.t_list = [int(self.T / self.out_channel) * i for i in range(1, out_channel + 1)]
+        self.cwt_filters = cwt_filters  # not supported yet
+        self.t_list = [int(self.T / self.cwt_filters) * i for i in range(1, cwt_filters + 1)]
         self.in_channel = in_channel
 
     def morlet(self, t_max, f0=6):
@@ -103,8 +115,8 @@ class CWTModule(nn.Module):
         return torch.cat([filt for _ in range(self.in_channel)], axis=-2)
 
     def forward(self, x):
-        return torch.cat([F.conv2d(x.float(), self.morlet(T).float(), padding='same') for T in self.t_list]).reshape(
-            self.out_channel, -1)
+        x = x[:, None, :, :]
+        return torch.squeeze(torch.cat([F.conv2d(x.float(), self.morlet(T).float(), padding='same') for T in self.t_list], axis=-2), 1)
 
 
 class FFTModule(nn.Module):
@@ -114,4 +126,21 @@ class FFTModule(nn.Module):
 
     def forward(self, x):
         result = fft(x * torch.hamming_window(self.length)) / self.length
-        return torch.cat([result.real, result.imag], axis=0)
+        return torch.cat([result.real, result.imag], axis=-2)
+
+
+class MLPClassifier(nn.Module):
+    def __init__(self, in_features, num_of_neurons, num_of_class):
+        super().__init__()
+        self.num_of_neurons = num_of_neurons
+        self.num_of_class = num_of_class
+        self.Linear1 = torch.nn.Linear(in_features=in_features, out_features=num_of_neurons)
+        self.Linear2 = torch.nn.Linear(in_features=num_of_neurons, out_features=int(num_of_neurons/2))
+        self.classifier = torch.nn.Linear(in_features=int(num_of_neurons/2), out_features=num_of_class)
+        self.act_fn = torch.nn.ReLU()
+
+    def forward(self, x):
+        x = self.act_fn(self.Linear1(x))
+        x = self.act_fn(self.Linear2(x))
+        return self.classifier(x)
+
