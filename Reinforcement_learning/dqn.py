@@ -80,7 +80,7 @@ class DQNAgent(nn.Module):
         self.steps_done += 1
         if sample > eps:
             with torch.no_grad():
-                return self.policy_net(state).max(1)[1].view(1, -1) ##
+                return self.policy_net(state).argmax(-1).view(1, -1) ##
         else:
             return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long) ## 
             
