@@ -104,7 +104,6 @@ class DQNAgent(nn.Module):
         
         criterion = nn.SmoothL1Loss()
         self.loss = criterion(self.state_action_values, self.expected_state_action_values.unsqueeze(1)) ##
-        ##self.loss.requires_grad_(True)
         self.loss_history.append(self.loss)
         self.optimizer.zero_grad()
         self.loss.backward()
