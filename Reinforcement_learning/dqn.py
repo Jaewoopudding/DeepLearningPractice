@@ -80,9 +80,9 @@ class DQNAgent(nn.Module):
         self.steps_done += 1
         if sample > eps:
             with torch.no_grad():
-                return self.policy_net(state).argmax(-1).view(1, -1)
+                return self.policy_net(state).max(1)[1].view(1, -1) ##
         else:
-            return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long)
+            return torch.tensor([[self.env.action_space.sample()]], device=self.device, dtype=torch.long) ## 
             
     def optimize_model(self):
         if len(self.memory) < self.batch_size:
@@ -100,11 +100,11 @@ class DQNAgent(nn.Module):
         self.next_state_values = torch.zeros(self.batch_size, device=self.device)
         with torch.no_grad():
             self.next_state_values[non_final_mask] = self.target_net(non_final_next_states).max(1)[0]
-        self.expected_state_action_values = (self.next_state_values)*self.gamma + reward_batch
+        self.expected_state_action_values = (self.next_state_values*self.gamma) + reward_batch
         
         criterion = nn.SmoothL1Loss()
-        self.loss = criterion(self.next_state_values, self.expected_state_action_values)
-        self.loss.requires_grad_(True)
+        self.loss = criterion(self.state_action_values, self.expected_state_action_values.unsqueeze(1)) ##
+        ##self.loss.requires_grad_(True)
         self.loss_history.append(self.loss)
         self.optimizer.zero_grad()
         self.loss.backward()
